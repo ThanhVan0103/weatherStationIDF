@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/CMakeFiles/bootloader"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/CMakeFiles/bootloader.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/CMakeFiles/bootloader-complete.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+		},
+		{
+			"file" : "E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bootloader"
+		],
+		"name" : "bootloader"
+	}
+}
