@@ -34,7 +34,7 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("E:/esp_idf_vscode/project/mqtt_bme280/build/esp-idf/soc/esp32/cmake_install.cmake")
+  include("E:/esp_idf_vscode/project/weather_station/build/esp-idf/soc/esp32/cmake_install.cmake")
 
 endif()
 

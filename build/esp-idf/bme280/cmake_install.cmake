@@ -1,4 +1,4 @@
-# Install script for directory: E:/esp_idf_vscode/project/mqtt_bme280/components/bme280
+# Install script for directory: E:/esp_idf_vscode/project/weather_station/components/bme280
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

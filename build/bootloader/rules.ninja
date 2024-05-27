@@ -242,7 +242,7 @@ rule C_STATIC_LIBRARY_LINKER____idf_main
 # Rule for re-running cmake.
 
 rule RERUN_CMAKE
-  command = C:\Users\Acer\.espressif\tools\cmake\3.16.4\bin\cmake.exe -SE:\esp\esp-idf\components\bootloader\subproject -BE:\esp_idf_vscode\project\mqtt_bme280\build\bootloader
+  command = C:\Users\Acer\.espressif\tools\cmake\3.16.4\bin\cmake.exe -SE:\esp\esp-idf\components\bootloader\subproject -BE:\esp_idf_vscode\project\weather_station\build\bootloader
   description = Re-running CMake...
   generator = 1
 

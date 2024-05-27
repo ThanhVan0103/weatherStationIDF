@@ -1,4 +1,4 @@
-/* * Data converted from E:/esp_idf_vscode/project/mqtt_bme280/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from E:/esp_idf_vscode/project/weather_station/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 .section .rodata.embedded

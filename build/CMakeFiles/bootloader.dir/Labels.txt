@@ -1,13 +1,13 @@
 # Target labels
  bootloader
 # Source files and their labels
-E:/esp_idf_vscode/project/mqtt_bme280/build/CMakeFiles/bootloader
-E:/esp_idf_vscode/project/mqtt_bme280/build/CMakeFiles/bootloader.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/CMakeFiles/bootloader-complete.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
-E:/esp_idf_vscode/project/mqtt_bme280/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+E:/esp_idf_vscode/project/weather_station/build/CMakeFiles/bootloader
+E:/esp_idf_vscode/project/weather_station/build/CMakeFiles/bootloader.rule
+E:/esp_idf_vscode/project/weather_station/build/CMakeFiles/bootloader-complete.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+E:/esp_idf_vscode/project/weather_station/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule

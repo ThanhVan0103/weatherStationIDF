@@ -15,13 +15,16 @@
 #include "bh1750.h"
 #include "driver/adc.h"
 #include "esp_adc_cal.h"
+#include <math.h> 
 
 #define MQTT_TOPIC_TEMPERATURE "esp32/bme280/temperature"
 #define MQTT_TOPIC_HUMIDITY "esp32/bme280/humidity"
 #define MQTT_TOPIC_PRESSURE "esp32/bme280/pressure"
 #define MQTT_TOPIC_LIGHT_INTENSITY "esp32/bh1750/light_intensity"
 #define MQTT_TOPIC_UV_INDEX "esp32/ml8511/uv_index"
-#define MQTT_TOPIC_WIND_SPEED "esp32/a3144/wind_speed"
+#define MQTT_TOPIC_WIND_SPEED "esp32/ky003/wind_speed"
+#define MQTT_TOPIC_CO2_INDEX "esp32/mq135/co2_index"
+#define MQTT_TOPIC_WIND_DIRECTION "esp32/ky003/wind_direct"
 
 #define EXAMPLE_ESP_WIFI_SSID "010203"
 #define EXAMPLE_ESP_WIFI_PASS "1234567890"
@@ -30,6 +33,13 @@
 #define SDA_PIN GPIO_NUM_21
 #define SCL_PIN GPIO_NUM_22
 
+#define KY003_PIN GPIO_NUM_25 //Wind
+#define TICK_PERIOD_MS 10
+
+// Định nghĩa các chân GPIO cho 4 cảm biến
+#define KY003_PINS { GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_27, GPIO_NUM_26 }
+#define DIRECTIONS {"Bắc", "Đông", "Nam", "Tây"}
+#define COMB_DIRECTIONS {"Đông Bắc", "Tây Bắc", "Đông Nam", "Tây Nam"}
 
 #define DEFAULT_VREF    1100        //Use adc2_vref_to_gpio() to obtain a better estimate
 #define NO_OF_SAMPLES   64          //Multisampling
@@ -39,12 +49,6 @@ static const char *TAG_BME280 = "BME280";
 
 static int retry_cnt = 0;
 
-int hallState = 0;
-int windMap[2][32] = {
-  {2000, 1400, 1000, 600, 500, 400, 320, 280, 240, 220, 200, 180, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 38, 36, 34, 32, 30, 28},
-  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 23, 25, 29, 34, 41, 51, 54, 57, 60, 64, 68, 73}
-};
-
 static esp_adc_cal_characteristics_t *adc_chars;
 static const adc_channel_t channel = ADC_CHANNEL_4;     //GPIO32 if ADC1, GPIO13 if ADC2
 static const adc_channel_t channel2 = ADC_CHANNEL_6;     //GPIO34 if ADC1, GPIO14 if ADC2
@@ -52,6 +56,15 @@ static const adc_bits_width_t width = ADC_WIDTH_BIT_12;
 static const adc_atten_t atten = ADC_ATTEN_DB_0;
 static const adc_unit_t unit = ADC_UNIT_1;
 
+// Biến để lưu trạng thái ngắt
+volatile int interrupt_flag = 0; // ngắt speed
+
+// Biến đếm số lần value = 0
+int count = 0;
+float wind_speed = 0.0;
+TickType_t reset_interval_ticks = 60000 / TICK_PERIOD_MS;
+
+volatile int interrupt_flags[4] = {0, 0, 0, 0}; // ngắt direct
 
 void i2c_master_init()
 {
@@ -229,7 +242,7 @@ static void mqtt_app_start(void)
 {
     ESP_LOGI(TAG, "STARTING MQTT");
     esp_mqtt_client_config_t mqttConfig = {
-        .uri = "mqtt://172.20.112.71:1883"};
+        .uri = "mqtt://172.20.113.110:1883"};
 
     client = esp_mqtt_client_init(&mqttConfig);
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
@@ -271,11 +284,11 @@ void Publisher_Task(void *params)
 
             double temp = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
             char temperature[12];
-            sprintf(temperature, "%.2f degC", temp);
+            sprintf(temperature, "%.2f", temp);
 
             double press = bme280_compensate_pressure_double(v_uncomp_pressure_s32) / 100; // Pa -> hPa
             char pressure[10];
-            sprintf(pressure, "%.2f hPa", press);
+            sprintf(pressure, "%.2f", press);
 
             double hum = bme280_compensate_humidity_double(v_uncomp_humidity_s32);
             char humidity[10];
@@ -308,7 +321,7 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
-void ADC_Task(void *arg)
+void ADC_Task_ML8511(void *arg)
 {
     adc1_config_width(width);
     adc1_config_channel_atten(channel, atten);
@@ -319,82 +332,71 @@ void ADC_Task(void *arg)
     char uv_Index[20];
     while (1) {
         uint32_t adc_reading_ML8511 = 0;
-        uint32_t adc_reading_A3144 = 0;
 
         //Multisampling
         for (int i = 0; i < NO_OF_SAMPLES; i++) {
             adc_reading_ML8511 += adc1_get_raw((adc1_channel_t)channel);
-            adc_reading_A3144 += adc1_get_raw((adc1_channel_t)channel2);
         }
         adc_reading_ML8511 /= NO_OF_SAMPLES;
-        adc_reading_A3144 /= NO_OF_SAMPLES;
 
         uint32_t voltage_ML8511 = esp_adc_cal_raw_to_voltage(adc_reading_ML8511, adc_chars);
-        uint32_t voltage_A3144 = esp_adc_cal_raw_to_voltage(adc_reading_A3144, adc_chars);
-      
-        // Map voltage to UV index
-        //printf("voltage_ML8511: %d mV\n", voltage_ML8511); // In ra giá trị điện áp
-        //printf("voltage_A3144: %d mV\n", voltage_A3144);
-
-        int HALL_THRESHOLD = 75;
-        hallState = (voltage_A3144 > HALL_THRESHOLD) ? 0 : 1;
-        printf("Hall Sensor State: %d\n", hallState);
-
-        float uvIndex = mapfloat(voltage_ML8511/1000, 0.99, 2.8, 0.0, 15.0);
-        //printf("UV Intensity (mW/cm^2): %.4f\n", uvIndex); // In ra giá trị điện áp
+    
+        float uvIndex = mapfloat(voltage_ML8511/1000.0, 0.8, 2.7, 0.0, 10.0);
         snprintf(uv_Index, sizeof(uv_Index), "%.2f ", uvIndex);   // Convert float to string
          if (MQTT_CONNEECTED)
         {
             esp_mqtt_client_publish(client, MQTT_TOPIC_UV_INDEX, uv_Index, 0, 0, 0);
 
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
 }
 
-void wind_speed_task(void *pvParameters) {
-  int counter = 0;
-  int lastState = 0;
-  float wind = 0;
-  char windSpeed_ms[20];
+void ADC_Task_MQ135(void *arg)
+{
+    adc1_config_width(width);
+    adc1_config_channel_atten(channel, atten);
+    
+    adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
+    esp_adc_cal_characterize(unit, atten, width, DEFAULT_VREF, adc_chars);
 
-  while (1) {
-    // Đếm số lần quay của cảm biến gió trong khoảng thời gian 6 giây
-    for (int i = 0; i <= 6000; i++) {
-      if (hallState == 1 && lastState == 0) {
-        counter++;
-        printf("--------------counter: %d\n", counter);
-        lastState = 1;
-      } else if (hallState == 0 && lastState == 1) {
-        lastState = 0;
-      }
-      vTaskDelay(1 / portTICK_PERIOD_MS);
-      //vTaskDelay(pdMS_TO_TICKS(1));
-    }
+    int Rload = 20000;
+    float rS,ppm = 0;
+    float rO = 11000;                 //min[Rs/Ro]=(max[ppm]/a)^(1/b)
+    float a = 110.7432567;
+    float b = -2.856935538;  
+    float rSrO;
+    float minppm = 0.358;
+    float maxppm = 2.428;
+    char CO2_Index[20];
 
-    int ave = 2000;
-    if (counter > 1) {
-      ave = 6000 / (counter - 1);
-    }
-
-    // Tìm tốc độ gió tương ứng với thời gian trung bình giữa các vòng quay
-    int index = 0;
-    while (ave < windMap[0][index]) {
-      index++;
-    }
-    wind = windMap[1][index]; 
-    wind = wind * 0.27; // convert kph to ms
-    //printf("AVE: %d\n", ave);
-    printf("Wind Speed ms: %.2f\n", wind);
-    snprintf(windSpeed_ms, sizeof(windSpeed_ms), "%.2f ms", wind);
-    if (MQTT_CONNEECTED)
+    while (1) {
+        int32_t adc_reading_MQ135 = 0; // Đổi kiểu dữ liệu của biến adc_reading thành int32_t
+            for (int i = 0; i < NO_OF_SAMPLES; i++) {
+            adc_reading_MQ135 += adc1_get_raw((adc1_channel_t)channel2);
+            }
+        adc_reading_MQ135 /= NO_OF_SAMPLES;
+        vTaskDelay(500 / portTICK_PERIOD_MS); // Thời gian lấy mẫ
+        uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading_MQ135, adc_chars);
+        //printf("voltage: %d\n", voltage);
+        rS = ((4095.0 * Rload) / adc_reading_MQ135) - Rload;
+        //printf("rO= %.2f\n", rO);
+        //printf("rS= %.2f\n", rS);
+        rSrO = rS/rO;
+        if (rSrO < maxppm && rSrO > minppm)
         {
-            esp_mqtt_client_publish(client, MQTT_TOPIC_WIND_SPEED, windSpeed_ms, 0, 0, 0);
+            ppm = a * pow(rSrO,b);
+            //printf("ppm= %.2f\n", ppm);
         }
+        snprintf(CO2_Index, sizeof(CO2_Index), "%.2f ", ppm);   // Convert float to string
+         if (MQTT_CONNEECTED)
+        {
+            esp_mqtt_client_publish(client, MQTT_TOPIC_CO2_INDEX, CO2_Index, 0, 0, 0);
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS); // Chờ 1 giây trước khi tính toán lại tốc độ gió
-  }
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000)); // Chờ 1 giây trước khi lấy mẫu tiếp theo
+    }
 }
 
 void bh1750_task(void *pvParameters)
@@ -404,13 +406,124 @@ void bh1750_task(void *pvParameters)
     while (1)
     {
         float lux = bh1750_read_light_intensity(); //ESP_LOGI(TAG, "Light intensity: %.2f lux", lux);
-        snprintf(light_intensity, sizeof(light_intensity), "%.2f lux", lux);   // Convert float to string
+        snprintf(light_intensity, sizeof(light_intensity), "%.2f", lux);   // Convert float to string
         if (MQTT_CONNEECTED)
         {
             esp_mqtt_client_publish(client, MQTT_TOPIC_LIGHT_INTENSITY, light_intensity, 0, 0, 0);
         }
         vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
+}
+
+void windSpeed_task(void *pvParameters) {
+        // Cấu hình chân GPIO cho cảm biến KY-003
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << KY003_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_NEGEDGE   // Kích hoạt ngắt khi cạnh xuống
+    };
+    gpio_config(&io_conf);
+
+    char char_wind_speed[20];
+    float wind_speed = 0.0;
+    int previous_sensor_value = 1; // Giả sử bắt đầu ở mức cao (1
+    TickType_t last_reset_time = xTaskGetTickCount();
+    while (1) {
+        if (interrupt_flag) {
+            // Đọc giá trị từ cảm biến
+            int sensor_value = gpio_get_level(KY003_PIN);
+
+            // Chỉ in ra giá trị khi bằng 0
+            if (sensor_value == 0 && previous_sensor_value == 1) {
+                printf("Sensor Value: %d\n", sensor_value);
+                // Tăng biến đếm lên một
+                count++;
+                printf("Count: %d\n", count);
+            }
+            previous_sensor_value = sensor_value;
+
+            if (xTaskGetTickCount() - last_reset_time >= reset_interval_ticks) {
+                wind_speed = count * 0.18; // Tính toán tốc độ gió
+                printf("Wind Speed: %.2f m/s\n", wind_speed);
+                count = 0;
+                printf("Count reset to 0\n");
+                last_reset_time = xTaskGetTickCount();
+            }
+
+            snprintf(char_wind_speed, sizeof(char_wind_speed), "%.2f", wind_speed);   // Convert float to string
+            if (MQTT_CONNEECTED)
+            {
+                esp_mqtt_client_publish(client, MQTT_TOPIC_WIND_SPEED, char_wind_speed, 0, 0, 0);
+            }
+            // Đặt lại cờ ngắt
+            interrupt_flag = 0;
+        }
+        // Đợi một thời gian ngắn trong vòng lặp chính
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
+}
+
+// Task để xử lý cảm biến và hiển thị hướng
+void windDirect_task(void *pvParameters) {
+    gpio_num_t ky003_pins[] = KY003_PINS;
+    const char* directions[] = DIRECTIONS;
+    const char* comb_directions[] = COMB_DIRECTIONS;
+    int num_sensors = sizeof(ky003_pins) / sizeof(ky003_pins[0]);
+    char char_wind_direct[20];
+
+    while (1) {
+        // Kiểm tra tất cả các cảm biến
+        int sensor_values[4];
+        for (int i = 0; i < num_sensors; i++) {
+            if (interrupt_flags[i]) {
+                sensor_values[i] = gpio_get_level(ky003_pins[i]);
+                interrupt_flags[i] = 0;
+            } else {
+                sensor_values[i] = 1; // Giá trị mặc định nếu không có ngắt
+            }
+        }
+
+        // Kiểm tra các tổ hợp hướng
+        if (sensor_values[0] == 0 && sensor_values[1] == 0) {
+            snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", comb_directions[0]);
+        } else if (sensor_values[0] == 0 && sensor_values[3] == 0) {
+            snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", comb_directions[1]);
+        } else if (sensor_values[2] == 0 && sensor_values[1] == 0) {
+            snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", comb_directions[2]);
+        } else if (sensor_values[2] == 0 && sensor_values[3] == 0) {
+            snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", comb_directions[3]);
+        } else {
+            // Kiểm tra các hướng đơn lẻ
+            if (sensor_values[0] == 0) {
+                snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", directions[0]);
+            } else if (sensor_values[1] == 0) {
+                snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", directions[1]);
+            } else if (sensor_values[2] == 0) {
+                snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", directions[2]);
+            } else if (sensor_values[3] == 0) {
+                snprintf(char_wind_direct, sizeof(char_wind_direct), "%s", directions[3]);
+            }
+        }
+
+        if (MQTT_CONNEECTED) {
+            esp_mqtt_client_publish(client, MQTT_TOPIC_WIND_DIRECTION, char_wind_direct, 0, 0, 0);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Đợi 1 giây
+    }
+}
+
+
+// Hàm ngắt cho speed_wind
+void IRAM_ATTR gpio_isr_handler(void* arg) {
+    interrupt_flag = 1;
+}
+
+// Hàm ngắt cho direct_wind
+void IRAM_ATTR gpio_isr_handler2(void* arg) {
+    int sensor_index = (int)arg;
+    interrupt_flags[sensor_index] = 1;
 }
 
 void app_main(void)
@@ -423,11 +536,38 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    // Định nghĩa các chân GPIO và hướng tương ứng
+    gpio_num_t ky003_pins[] = KY003_PINS;
+    int num_sensors = sizeof(ky003_pins) / sizeof(ky003_pins[0]);
+
+    // Cấu hình chân GPIO cho các cảm biến
+    for (int i = 0; i < num_sensors; i++) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << ky003_pins[i]),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .intr_type = GPIO_INTR_NEGEDGE
+        };
+        gpio_config(&io_conf);
+    }
+
+    // // Cài đặt dịch vụ ISR cho windSpeed 
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(KY003_PIN, gpio_isr_handler, (void*) KY003_PIN);
+
+    // Cài đặt dịch vụ ISR cho windDirect 
+    for (int i = 0; i < num_sensors; i++) {
+        gpio_isr_handler_add(ky003_pins[i], gpio_isr_handler2, (void*)i);
+    }
+
     wifi_init();
     i2c_master_init();     
 
     xTaskCreate(&bh1750_task, "bh1750_task", configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL);
     xTaskCreate(Publisher_Task, "Publisher_Task", 1024 * 5, NULL, 5, NULL);
-    xTaskCreatePinnedToCore(ADC_Task, "ADC_Task", 4096, NULL, 3, NULL, 1);
-    xTaskCreate(wind_speed_task, "wind_speed_task", 4096, NULL, 1, NULL);
+    xTaskCreatePinnedToCore(ADC_Task_ML8511, "ADC_Task_ML8511", 4096, NULL, 3, NULL, 1);
+    xTaskCreate(ADC_Task_MQ135, "ADC_Task_MQ135", 1024 * 5, NULL, 5, NULL);
+    // Tạo task để đọc giá trị cảm biến và xử lý ngắt
+    xTaskCreate(windSpeed_task, "windSpeed_task", 1024 * 5, NULL, 5, NULL);
+    xTaskCreate(windDirect_task, "windDirect_task", 4096, NULL, 5, NULL);
 }
