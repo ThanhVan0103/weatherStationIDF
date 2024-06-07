@@ -18,6 +18,9 @@
         "freertos.h": "c",
         "*.inc": "c",
         "stdio.h": "c",
-        "bh1750.h": "c"
+        "bh1750.h": "c",
+        "esp_event.h": "c",
+        "nvs_flash.h": "c",
+        "*.ipp": "c"
     }
 }

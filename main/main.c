@@ -25,6 +25,7 @@
 #define MQTT_TOPIC_WIND_SPEED "esp32/ky003/wind_speed"
 #define MQTT_TOPIC_CO2_INDEX "esp32/mq135/co2_index"
 #define MQTT_TOPIC_WIND_DIRECTION "esp32/ky003/wind_direct"
+#define MQTT_TOPIC_BATTERY_PERCENTAGE "esp32/16500/battery"
 
 #define EXAMPLE_ESP_WIFI_SSID "010203"
 #define EXAMPLE_ESP_WIFI_PASS "1234567890"
@@ -52,6 +53,7 @@ static int retry_cnt = 0;
 static esp_adc_cal_characteristics_t *adc_chars;
 static const adc_channel_t channel = ADC_CHANNEL_4;     //GPIO32 if ADC1, GPIO13 if ADC2
 static const adc_channel_t channel2 = ADC_CHANNEL_6;     //GPIO34 if ADC1, GPIO14 if ADC2
+static const adc_channel_t channel3 = ADC_CHANNEL_7;     //GPIO36 if ADC1, GPIO4 if ADC2
 static const adc_bits_width_t width = ADC_WIDTH_BIT_12;
 static const adc_atten_t atten = ADC_ATTEN_DB_0;
 static const adc_unit_t unit = ADC_UNIT_1;
@@ -153,7 +155,10 @@ uint32_t MQTT_CONNEECTED = 0;
 
 static void mqtt_app_start(void);
 
-static esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base,
+static void wifi_event_handler(void *arg, esp_event_base_t event_base,
+                                    int32_t event_id, void *event_data);
+
+static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                     int32_t event_id, void *event_data)
 {
     switch (event_id)
@@ -185,7 +190,6 @@ static esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base,
     default:
         break;
     }
-    return ESP_OK;
 }
 
 void wifi_init(void)
@@ -214,8 +218,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 {
     ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%d", base, event_id);
     esp_mqtt_event_handle_t event = event_data;
-    esp_mqtt_client_handle_t client = event->client;
-    int msg_id;
+    //esp_mqtt_client_handle_t client = event->client;
+    //int msg_id;
     switch ((esp_mqtt_event_id_t)event_id)
     {
     case MQTT_EVENT_CONNECTED:
@@ -242,7 +246,7 @@ static void mqtt_app_start(void)
 {
     ESP_LOGI(TAG, "STARTING MQTT");
     esp_mqtt_client_config_t mqttConfig = {
-        .uri = "mqtt://172.20.113.110:1883"};
+        .uri = "mqtt://172.20.100.4:1883"};
 
     client = esp_mqtt_client_init(&mqttConfig);
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
@@ -356,7 +360,7 @@ void ADC_Task_ML8511(void *arg)
 void ADC_Task_MQ135(void *arg)
 {
     adc1_config_width(width);
-    adc1_config_channel_atten(channel, atten);
+    adc1_config_channel_atten(channel2, atten);
     
     adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
     esp_adc_cal_characterize(unit, atten, width, DEFAULT_VREF, adc_chars);
@@ -378,7 +382,7 @@ void ADC_Task_MQ135(void *arg)
             }
         adc_reading_MQ135 /= NO_OF_SAMPLES;
         vTaskDelay(500 / portTICK_PERIOD_MS); // Thời gian lấy mẫ
-        uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading_MQ135, adc_chars);
+        //uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading_MQ135, adc_chars);
         //printf("voltage: %d\n", voltage);
         rS = ((4095.0 * Rload) / adc_reading_MQ135) - Rload;
         //printf("rO= %.2f\n", rO);
@@ -396,6 +400,37 @@ void ADC_Task_MQ135(void *arg)
 
         }
         vTaskDelay(pdMS_TO_TICKS(5000)); // Chờ 1 giây trước khi lấy mẫu tiếp theo
+    }
+}
+
+void ADC_Task_BATTERY(void *arg)
+{
+    adc1_config_width(width);
+    adc1_config_channel_atten(channel, atten);
+    
+    adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
+    esp_adc_cal_characterize(unit, atten, width, DEFAULT_VREF, adc_chars);
+    char bat_Index[20];
+    while (1) {
+        uint32_t adc_reading_BATTERY = 0;
+
+        //Multisampling
+        for (int i = 0; i < NO_OF_SAMPLES; i++) {
+            adc_reading_BATTERY += adc1_get_raw((adc1_channel_t)channel3);
+        }
+        adc_reading_BATTERY /= NO_OF_SAMPLES;
+
+        uint32_t voltage_BATTERY = esp_adc_cal_raw_to_voltage(adc_reading_BATTERY, adc_chars);
+    
+        float battery_Index = mapfloat(voltage_BATTERY/1000.0, 2.8, 4.2, 0.0, 100.0);
+        printf("pin %f",battery_Index);
+        snprintf(bat_Index, sizeof(bat_Index), "%.2f ", battery_Index);   // Convert float to string
+         if (MQTT_CONNEECTED)
+        {
+            esp_mqtt_client_publish(client, MQTT_TOPIC_BATTERY_PERCENTAGE, bat_Index, 0, 0, 0);
+
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 
@@ -460,7 +495,7 @@ void windSpeed_task(void *pvParameters) {
             interrupt_flag = 0;
         }
         // Đợi một thời gian ngắn trong vòng lặp chính
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -510,7 +545,7 @@ void windDirect_task(void *pvParameters) {
             esp_mqtt_client_publish(client, MQTT_TOPIC_WIND_DIRECTION, char_wind_direct, 0, 0, 0);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Đợi 1 giây
+        vTaskDelay(pdMS_TO_TICKS(3000)); // Đợi 1 giây
     }
 }
 
@@ -565,9 +600,9 @@ void app_main(void)
 
     xTaskCreate(&bh1750_task, "bh1750_task", configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL);
     xTaskCreate(Publisher_Task, "Publisher_Task", 1024 * 5, NULL, 5, NULL);
-    xTaskCreatePinnedToCore(ADC_Task_ML8511, "ADC_Task_ML8511", 4096, NULL, 3, NULL, 1);
-    xTaskCreate(ADC_Task_MQ135, "ADC_Task_MQ135", 1024 * 5, NULL, 5, NULL);
-    // Tạo task để đọc giá trị cảm biến và xử lý ngắt
+    xTaskCreatePinnedToCore(ADC_Task_ML8511, "ADC_Task_ML8511", 1024 * 3, NULL, 3, NULL, 1);
+    xTaskCreate(ADC_Task_MQ135, "ADC_Task_MQ135", 1024 * 3, NULL, 5, NULL);
+    xTaskCreate(ADC_Task_BATTERY, "ADC_Task_BATTERY", 1024 * 3, NULL, 2, NULL);
     xTaskCreate(windSpeed_task, "windSpeed_task", 1024 * 5, NULL, 5, NULL);
-    xTaskCreate(windDirect_task, "windDirect_task", 4096, NULL, 5, NULL);
+    xTaskCreate(windDirect_task, "windDirect_task", 1024 * 5, NULL, 5, NULL);
 }
