@@ -1,7 +1,7 @@
 {
     "version":            "1",
     "project_name":       "BME280_MQTT",
-    "project_version":    "7ae0e08-dirty",
+    "project_version":    "b81948a-dirty",
     "project_path":       "E:/esp_idf_vscode/project/weather_station",
     "idf_path":           "E:/esp/esp-idf",
     "build_dir":          "E:/esp_idf_vscode/project/weather_station/build",

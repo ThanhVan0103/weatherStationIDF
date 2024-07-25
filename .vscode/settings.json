@@ -22,5 +22,6 @@
         "esp_event.h": "c",
         "nvs_flash.h": "c",
         "*.ipp": "c"
-    }
+    },
+    "idf.flashType": "JTAG"
 }
